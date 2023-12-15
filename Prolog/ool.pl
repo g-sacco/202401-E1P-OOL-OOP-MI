@@ -17,38 +17,44 @@ is_list_of_classes([X | Xs]) :-
     is_class(X),
     is_list_of_classes(Xs).
 
+% field(+Field_name, +Value)\2
+field(Field_name, _) :-
+    atom(Field_name).
+% field(+Field_name, +Value, +Type)\3
+field(Field_name, Value, Type) :-
+    atom(Field_name),
+    % HACK: Is a var() considered a Term?
+    % e.g. field(age, AGE, var). is this ok?
+    Test_type =.. [Type, Value],
+    Test_type.  % Type(Value)
+% method(+Method_name, +Arglist, +Form)\3
+method(Method_name, Arglist, Form) :-
+    atom(Method_name),
+    is_list(Arglist),
+    callable(Form).
+
 % is_list_of_parts(+List)\1
-% a part can be:
-% 1) field(<field-name>, <value>)
-% 2) field(<field-name>, <value>, <type>)
-% 3) method(<method-name>, <arg-list>, <form>)
 is_list_of_parts([]).
 is_list_of_parts([Part | Parts]) :- % 1)
-    same_functor(field(_, _), Part, 2),
-    is_list_of_parts(Parts).
-is_list_of_parts([Part | Parts]) :- % 2)
-    same_functor(field(_, _, _), Part, 3),
-    is_list_of_parts(Parts).
-is_list_of_parts([Part | Parts]) :- % 3)
-    same_functor(method(_, _, _), Part, 3),
+    Part,
     is_list_of_parts(Parts).
 
 % assert_class(Class+, )
 assert_class(Class_name, Parents, Parts) :-
-    %HACK: What should I do if class with "Class_name" already exist?
+    % HACK: What should I do if class with "Class_name" already exist? aggiorna la variabile
+    % TODO: Update the class if the class already exist
     \+ is_class(Class_name), % test if class already exist
     Class =.. [class, Class_name, Parents, Parts],
     assertz(Class).
+assert_class(Class_name, Parents, Parts) :-
+    is_class(Class_name),
+    Class =.. [class, Class_name, _, _],
+    retractall(Class),
+    assert_class(Class_name, Parents, Parts).
 
 % def_class\2
 def_class(Class_name, Parents) :-
-    atom(Class_name),
-
-    is_list(Parents),
-    is_list_of_classes(Parents),
-
-    assert_class(Class_name, Parents, []).
-
+    def_class(Class_name, Parents, []).
 % def_class\3
 def_class(Class_name, Parents, Parts) :-
     atom(Class_name),
@@ -61,10 +67,34 @@ def_class(Class_name, Parents, Parts) :-
 
     assert_class(Class_name, Parents, Parts).
 
+%%% -------- MAKE ---------------
 
-%TBD:
-%FIXME:
-%HACK:
+
+
+% make(+Instance_name, +Class_name, +Fields)
+%%% Instance_name is an atom()
+make(Instance_name, Class_name) :-
+    make(Instance_name, Class_name, []).
+
+%%% TODO: create instance(Instance_name, )
+make(Instance_name, Class_name, Fields) :-
+    atom(Instance_name),
+    is_class(Class_name),
+    is_list(Fields),
+    assertz(instance(Instance_name, Fields)).
+
+
+
+%%% Instance_name is a var()
+%%% TODO: make(Instance_name, Class_name, Fields) :- var(Instance_name).
+%%% Instance_name is a term
+%%%% TODO: make(Instance_name, Class_name, Fields) :-
+
+
+
+% TODO:
+% FIXME:
+% HACK:
 
 %Example
 /*
