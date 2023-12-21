@@ -102,67 +102,104 @@ def_class(Class_name, Parents, Parts) :-
 %%% -------- MAKE ---------------
 
 %%% assert_instance_fields\3
-assert_instance_fields(_Instance_name, [], _Instance_values).
+assert_instance_fields(Instance_name, [], _Instance_values) :-
+    instance(Instance_name, Class_name),
+    findall(superclass(_Class_name, Parent),
+           superclass(Class_name, Parent),
+           Parents).
 %%% use CUSTOM field value
-assert_instance_fields(Instance_name, [Class_field | Tail], Instance_values) :-
-    %%% TODO: assert "instance_field(Instance_name, Field_name, Value)"
-    %%% parsing each class field and looking for instance values
-    arg(2, Class_field, Key),
+assert_instance_fields(Instance_name, [class_field(_, Key, _Val) | Tail], Instance_values) :-
+%    arg(2, Class_field, Key),
     member(Key = Value, Instance_values),
     Instance_field =.. [instance_field, Instance_name, Key, Value],
     assertz(Instance_field),
     assert_instance_fields(Instance_name,  Tail, Instance_values).
 %%% use DEFAULT field_value
-assert_instance_fields(Instance_name, [Class_field | Tail], Instance_values) :-
-    arg(2, Class_field, Key),
+assert_instance_fields(Instance_name, [class_field(_, Key, Value) | Tail], Instance_values) :-
     \+ member(Key = _Val, Instance_values),
-    arg(3, Class_field, Value),
     Instance_field =.. [instance_field, Instance_name, Key, Value],
     assertz(Instance_field),
     assert_instance_fields(Instance_name,  Tail, Instance_values).
 
-%%% assert_instance()
-assert_instance(Instance_name, Class_name, Fields) :-
-    assertz(instance(Instance_name, Class_name)),
+%%% use CUSTOM field value
+assert_instance_fields(Instance_name, [class_field(_, Key, _Val, Type) | Tail], Instance_values) :-
+    member(Key = Value, Instance_values),
+    Instance_field =.. [instance_field, Instance_name, Key, Value, Type],
+    Type_test =.. [Type, Value], % FIXME it doesn't check if the instance value has a valid type
+    Type_test,
+    assertz(Instance_field),
+    assert_instance_fields(Instance_name,  Tail, Instance_values).
+%%% use DEFAULT field_value
+assert_instance_fields(Instance_name, [class_field(_, Key, Value, Type) | Tail], Instance_values) :-
+    \+ member(Key = _Val, Instance_values),
+    Instance_field =.. [instance_field, Instance_name, Key, Value],
+    assertz(Instance_field),
+    assert_instance_fields(Instance_name,  Tail, Instance_values).
+
+
+
+assert_instance_parents_fields(_Instance_name, [], _Values).
+assert_instance_parents_fields(Instance_name, [Class_name | Tail], Instance_values) :-
     findall(class_field(_, X, Y),
             class_field(Class_name, X, Y),
             Class_fields),
-    assert_instance_fields(Instance_name, Class_fields, Fields).
+    assert_instance_fields(Instance_name, Class_fields, Instance_values),
+    assert_instance_parents_fields(Instance_name, Tail, Instance_values).
 
+clean_list([], _).
+clean_list([superclass(_, Parent)], [Parent]).
+clean_list([superclass(_, Parent) | Tail], Cleaned) :-
+    clean_list(Tail, Result),
+    append([Parent], Result, Cleaned).
 
+get_all_related(Class_name, All_classes) :-
+    atom(Class_name),
+    findall(superclass(_, Parent),
+            superclass(Class_name, Parent),
+            Parents),
+    clean_list(Parents, Cleaned),
+    get_all_parents_list(Cleaned, All_parents),
+    append([Class_name], All_parents, All_classes).
+
+get_all_parents_list([], []).
+get_all_parents_list([Class | Tail], Result) :-
+    get_all_parents_list(Tail, All_parents),
+    atom(Class),
+    findall(superclass(_, Parent),
+            superclass(Class, Parent),
+            Parents),
+    clean_list(Parents, Cleaned),
+    append(Cleaned, All_parents, X),
+    append([Class], X, Result).
+
+%%% assert_instance()
+assert_instance(Instance_name, Class_name, Instance_values) :-
+    assertz(instance(Instance_name, Class_name)),
+    get_all_related(Class_name, Related_classes),
+    assert_instance_parents_fields(Instance_name, Related_classes, Instance_values).
 
 % make(+Instance_name, +Class_name, +Fields)
 %%% Instance_name is an atom()
 make(Instance_name, Class_name) :-
     make(Instance_name, Class_name, []).
 
-%%% TODO: create instance(Instance_name, )
 make(Instance_name, Class_name, Fields) :-
     atom(Instance_name),
     is_class(Class_name),
     is_list(Fields),
-    %%% TODO: check  if fields are present in class
-    %%%       inherit all the class fields
     assert_instance(Instance_name, Class_name, Fields).
-    %assertz(instance(Class_name, Instance_name, Fields))
+%%% TODO: make v2
+%%% TODO: make v3
 
+%%% TODO: is_instance()
 
 %%% TODO: inst\2
 %%% build instance(inst_name, class, [key = value, ...])
 %%% given inst_name
 
+%%% TODO field()
+%%% TODO fieldx()
 
-
-%%% Instance_name is a var()
-%%% TODO: make(Instance_name, Class_name, Fields) :- var(Instance_name).
-%%% Instance_name is a term
-%%% TODO: make(Instance_name, Class_name, Fields) :-
-
-
-
-% TODO:
-% FIXME:
-% HACK:
 
 %Example
 /*
@@ -178,5 +215,10 @@ def_class(student, [person],
                               write("My age is "),
                               field(this, age, A),
                               writeln(A)))]).
+
+def_class(planet, [], [field(name, terra)]).
+def_class(continent, [planet], [field(name2, europa)]).
+def_class(state, [continent], [field(name3, italia)]).
+make(s1, state, [name1 = "Marte", name2 = "Avis", name3="site"]).
 */
 %%% end of file - ool.pl
