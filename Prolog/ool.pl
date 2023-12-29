@@ -6,6 +6,9 @@
 :- dynamic class_field/3.
 :- dynamic class_field/4
 :- dynamic class_method/4.
+:- dynamic instance_/2.
+:- dynamic superclass/2.
+:- dynamic instance_field/4.
 
 % is_class\1
 % checks if the class exist
@@ -48,32 +51,25 @@ assert_class_parents(Class_name, [Parent | Tail]) :-
 %%% assert_class_parts()\2
 assert_class_parts(_Class_name, []).
 %%% assert class_field\2
-assert_class_parts(Class_name, [Part | Tail]) :-
-    functor(Part, field, 2),
-    arg(1, Part, Field_name),
-    arg(2, Part, Value),
+assert_class_parts(Class_name, [field(Field_name, Value) | Tail]) :-
     Field =.. [class_field, Class_name,  Field_name, Value],
     assertz(Field),
     assert_class_parts(Class_name, Tail).
 %%% assert_class_field\2
-assert_class_parts(Class_name, [Part | Tail]) :-
-    functor(Part, field, 3),
-    arg(1, Part, Field_name),
-    arg(2, Part, Value),
-    arg(3, Part, Type),
+assert_class_parts(Class_name, [field(Field_name, Value, Type) | Tail]) :-
     Field =.. [class_field, Class_name, Field_name, Value, Type],
     assertz(Field),
     assert_class_parts(Class_name, Tail).
 %%% assert_class_method\3
-assert_class_parts(Class_name, [Part | Tail]) :-
-    functor(Part, method, 3),
-    arg(1, Part, Method_name),
-    arg(2, Part, Arguments),
-    arg(3, Part, Form),
-    Method =.. [class_method, Class_name, Method_name, Arguments, Form],
-    assertz(Method),
+assert_class_parts(Class_name, [method(Method_name, Arguments, Form) | Tail]) :-
+    Class_method =.. [class_method, Class_name, Method_name, Arguments, Form],
+    assertz(Class_method),
+    %append(_This, Arguments, Args),
+    % FIXME: find a way to use this into a method
+    %append([Method_name], Arguments, Method_list),
+    %Method =.. Method_list,
+    %assertz(Method :- Form),
     assert_class_parts(Class_name, Tail).
-
 
 % assert_class\3
 assert_class(Class_name, Parents, Parts) :-
@@ -105,14 +101,18 @@ def_class(Class_name, Parents, Parts) :-
 assert_instance_fields(_Instance_name, [], _Instance_values).
 %%% class_field
 %%% use CUSTOM field value
-assert_instance_fields(Instance_name, [class_field(_, Key, _Val) | Tail], Instance_values) :-
+assert_instance_fields(Instance_name,
+                       [class_field(_, Key, _Val) | Tail],
+                       Instance_values) :-
 %    arg(2, Class_field, Key),
     member(Key = Value, Instance_values),
     Instance_field =.. [instance_field, Instance_name, Key, Value],
     assertz(Instance_field),
     assert_instance_fields(Instance_name,  Tail, Instance_values).
 %%% use DEFAULT field_value
-assert_instance_fields(Instance_name, [class_field(_, Key, Value) | Tail], Instance_values) :-
+assert_instance_fields(Instance_name,
+                       [class_field(_, Key, Value) | Tail],
+                       Instance_values) :-
     \+ member(Key = _Val, Instance_values),
     Instance_field =.. [instance_field, Instance_name, Key, Value],
     assertz(Instance_field),
@@ -120,7 +120,9 @@ assert_instance_fields(Instance_name, [class_field(_, Key, Value) | Tail], Insta
 
 %%% class_field with TYPE
 %%% use CUSTOM field value
-assert_instance_fields(Instance_name, [class_field(_, Key, _Val, Type) | Tail], Instance_values) :-
+assert_instance_fields(Instance_name,
+                       [class_field(_, Key, _Val, Type) | Tail],
+                       Instance_values) :-
     member(Key = Value, Instance_values),
     Instance_field =.. [instance_field, Instance_name, Key, Value, Type],
     Type_test =.. [Type, Value],
@@ -128,7 +130,9 @@ assert_instance_fields(Instance_name, [class_field(_, Key, _Val, Type) | Tail], 
     assertz(Instance_field),
     assert_instance_fields(Instance_name,  Tail, Instance_values).
 %%% use DEFAULT field_value
-assert_instance_fields(Instance_name, [class_field(_, Key, Value, _Type) | Tail], Instance_values) :-
+assert_instance_fields(Instance_name,
+                       [class_field(_, Key, Value, _Type) | Tail],
+                       Instance_values) :-
     \+ member(Key = _Val, Instance_values),
     Instance_field =.. [instance_field, Instance_name, Key, Value],
     assertz(Instance_field),
@@ -137,10 +141,16 @@ assert_instance_fields(Instance_name, [class_field(_, Key, Value, _Type) | Tail]
 
 %%% assert_instance_parents_fields\3
 assert_instance_parents_fields(_Instance_name, [], _Values).
-assert_instance_parents_fields(Instance_name, [Class_name | Tail], Instance_values) :-
-    findall(class_field(_, X, Y),
-            class_field(Class_name, X, Y),
-            Class_fields),
+assert_instance_parents_fields(Instance_name,
+                               [Class_name | Tail],
+                               Instance_values) :-
+    findall(class_field(_, Key, Val),
+            class_field(Class_name, Key, Val),
+            Class_fields_notype),
+    findall(class_field(_, Key, Val, Type),
+            class_field(Class_name, Key, Val, Type),
+            Class_fields_type),
+    append(Class_fields_notype, Class_fields_type, Class_fields),
     assert_instance_fields(Instance_name, Class_fields, Instance_values),
     assert_instance_parents_fields(Instance_name, Tail, Instance_values).
 
@@ -165,13 +175,59 @@ get_all_parents(Class_name, All_parents) :-
             Parents),
         get_all_parents_list(Parents, All_parents).
 
+%
+%extract_arguments(Term, Arguments) :-
+%    Term =.. [_|Arguments].
+
+substitute_this_chars([], _Sub, []).
+
+substitute_this_chars([t, h, i, s | Tail], Sub, [Sub | Res]) :-
+    substitute_this_chars(Tail, Sub, Res),
+    !.
+
+substitute_this_chars([Head | Tail], Sub, [Head | Res]) :-
+    substitute_this_chars(Tail, Sub, Res).
+
+
+substitute_this(Term_old, Substitute, Result) :-
+    term_string(Term_old, String_old),
+    string_chars(String_old, Chars_old),
+    string_chars(Substitute, Sub_chars),
+    substitute_this_chars(Chars_old, Sub_chars, Chars_new),
+    flatten(Chars_new, Flat_chars_new),
+    string_chars(Flat_string_new, Flat_chars_new),
+    term_string(Result, Flat_string_new).
+
+
+assert_instance_method(_Instance_name, []).
+assert_instance_method(Instance_name,
+                       [class_method(_Class_name,
+                                     Method_name,
+                                     Args,
+                                     Form) | Tail]) :-
+    append([[Method_name], [Instance_name], Args], Predicate),
+    Method =.. Predicate,
+    substitute_this(Form, Instance_name, New_form),
+    assertz(Method :- New_form),
+    assert_instance_method(Instance_name, Tail).
+
+assert_instance_methods(Instance_name, Class_name) :-
+    findall(class_method(Class_name, Method_name, Arguments, Form),
+            class_method(Class_name, Method_name, Arguments, Form),
+            Methods),
+    % TODO: inherit all parents methods, if duplicate use the nearest method
+    assert_instance_method(Instance_name, Methods).
+
 %%% assert_instance()
 assert_instance(Instance_name, Class_name, Instance_values) :-
     \+ is_instance(Instance_name),
-    assertz(instance(Instance_name, Class_name)),
+    assertz(instance_(Instance_name, Class_name)),
     get_all_parents(Class_name, Parent_classes),
     append([Class_name], Parent_classes, Related_classes),
-    assert_instance_parents_fields(Instance_name, Related_classes, Instance_values).
+    assert_instance_parents_fields(Instance_name,
+                                   Related_classes,
+                                   Instance_values),
+    assert_instance_methods(Instance_name, Class_name).
 
 % make(+Instance_name, +Class_name, +Fields)
 %%% Instance_name is an atom()
@@ -189,16 +245,16 @@ make(Instance_name, Class_name, Fields) :-
 
 %%% is_instance()
 is_instance(Instance_name) :-
-    instance(Instance_name, _Class_name).
+    instance_(Instance_name, _Class_name).
 is_instance(Instance_name, Superclass_name) :-
-    instance(Instance_name, Class_name),
+    instance_(Instance_name, Class_name),
     get_all_parents(Class_name, Parents),
     member(Superclass_name, Parents).
 
 %%% inst\2
 %%% build instance(inst_name, class, [key = value, ...])
 inst(Instance_name, Instance) :-
-    instance(Instance_name, Class_name),
+    instance_(Instance_name, Class_name),
     findall(Key = Value,
             instance_field(Instance_name, Key, Value),
             Fields_notype),
@@ -206,7 +262,7 @@ inst(Instance_name, Instance) :-
             instance_field(Instance_name, Key, Value, _Type),
             Fields_type),
     append(Fields_notype, Fields_type, Fields),
-    Instance =.. [instance, Instance_name, Class_name, Fields].
+    Instance =.. [instance_, Instance_name, Class_name, Fields].
 
 %%% field()\3
 field(Instance_name, Field_name, Result) :-
@@ -222,18 +278,11 @@ fieldx(Instance_name, [Field_name | Tail], Result) :-
     fieldx(Value, Tail, Result).
 %Example
 /*
-class(person, [],
-          [ field(name, "Eve"),
-            field(age, 21, integer)]).
-def_class(student, [person],
-          [ field(name, "Eva Lu Ator"),
-            field(university, "Berkeley"),
-            method(talk, [], (write("My name is "),
-                              field(this, name, N),
-                              writeln(N),
-                              write("My age is "),
-                              field(this, age, A),
-                              writeln(A)))]).
+def_class(person, [], [ field(name, "Eve"), field(age, 21, integer)]).
+def_class(student, [person], [ field(name, "Eva Lu Ator"), field(university, "Berkeley"), method(talk, [], (write("My name is "), field(this, name, N), writeln(N), write("My age is "), field(this, age, A), writeln(A)))]).
+def_class(studente_bicocca, [student], [method(talk, [], (write("Mi chiamo"), field(this, name, N), writeln(N), writeln("e studio alla Bicocca."))), method(to_string, [ResultingString], (with_output_to(string(ResultingString),(field(this, name, N), field(this, university, U), format("#<~w Student ~w>", [U, N]))))), field(university, "UNIMIB")]).
+
+assert_class_parts(person, [method(cut6, [This, X], (writeln("CUT!"), field(This, name, X), writeln(X) )) ]).
 
 def_class(planet, [], [field(name, terra)]).
 def_class(continent, [planet], [field(name2, europa)]).
