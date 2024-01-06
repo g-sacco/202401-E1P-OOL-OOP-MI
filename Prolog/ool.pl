@@ -242,6 +242,7 @@ make(Instance_name, Class_name, Fields) :-
 
 %%% TODO: make v2
 %%% TODO: make v3
+%%% TODO: make check if field names are right for the instance
 
 %%% is_instance()
 is_instance(Instance_name) :-
