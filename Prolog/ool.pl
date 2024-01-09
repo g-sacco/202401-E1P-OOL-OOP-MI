@@ -1,3 +1,5 @@
+%%%% Sacco Giacomo 899927
+
 %%%  -*- Mode: Prolog -*-
 
 %%% file: ool.pl
@@ -10,14 +12,14 @@
 :- dynamic superclass/2.
 :- dynamic instance_field/4.
 
-% is_class\1
-% checks if the class exist
+%%% is_class\1
+%%% checks if the class exist
 is_class(Class_name) :-
     atom(Class_name),
     class(Class_name, _, _).
 
-% is_list_of_Classes(+List)\1
-% checks if every element of a list is atomic
+%%% is_list_of_Classes\1
+%%% checks if every element of a list is atomic
 is_list_of_classes([], _).
 is_list_of_classes([X | Xs], Curr_class) :-
     X \= Curr_class,
@@ -25,7 +27,8 @@ is_list_of_classes([X | Xs], Curr_class) :-
     is_class(X),
     is_list_of_classes(Xs, Curr_class).
 
-% is_list_of_parts(+List)\1
+%%% is_list_of_parts\1
+%%% checks if the given list is a list of fields and methods
 is_list_of_parts([]).
 is_list_of_parts([field(Field_name, _Value) | Parts]) :-
     atom(Field_name),
@@ -42,48 +45,53 @@ is_list_of_parts([method(Method_name, Arglist, Form) | Parts]) :-
     is_list_of_parts(Parts).
 
 %%% assert_class_parents()\2
+%%% given the class-name and a list of parents links class_name and
+%%% each parent using the predicate "superclass"
 assert_class_parents(_Class_name, []).
 assert_class_parents(Class_name, [Parent | Tail]) :-
     Superclass =.. [superclass, Class_name, Parent],
     assertz(Superclass), % superclass(CN, PN)
     assert_class_parents(Class_name, Tail).
 
+
 %%% assert_class_parts()\2
+%%% asserts fields as "class_field()" and methods as "class_method()"
 assert_class_parts(_Class_name, []).
-%%% assert class_field\2
 assert_class_parts(Class_name, [field(Field_name, Value) | Tail]) :-
     Field =.. [class_field, Class_name,  Field_name, Value],
     assertz(Field),
     assert_class_parts(Class_name, Tail).
-%%% assert_class_field\2
 assert_class_parts(Class_name, [field(Field_name, Value, Type) | Tail]) :-
     Field =.. [class_field, Class_name, Field_name, Value, Type],
     assertz(Field),
     assert_class_parts(Class_name, Tail).
-%%% assert_class_method\3
 assert_class_parts(Class_name, [method(Method_name, Arguments, Form) | Tail]) :-
     Class_method =.. [class_method, Class_name, Method_name, Arguments, Form],
     assertz(Class_method),
-    %append(_This, Arguments, Args),
-    % FIXME: find a way to use this into a method
-    %append([Method_name], Arguments, Method_list),
-    %Method =.. Method_list,
-    %assertz(Method :- Form),
     assert_class_parts(Class_name, Tail).
 
-% assert_class\3
+%%% assert_class\3
+%%% given a class name, parents, fields and methods (parts), assert a
+%%% new class using the predicate "class()\3". If class already exist
+%%% gives an error.
 assert_class(Class_name, Parents, Parts) :-
-    % TODO: print an error message when a class already exist
     \+ is_class(Class_name), % test if class already exist
     Class =.. [class, Class_name, Parents, Parts],
     assertz(Class),
     assert_class_parents(Class_name, Parents),
     assert_class_parts(Class_name, Parts).
+assert_class(Class_name, _Parents, _Parts) :-
+    is_class(Class_name),
+    write("Error: assert_class: the class \""),
+    write(Class_name),
+    writeln("\" already exists"),
+    fail.
 
-% def_class\2
+%%% def_class\3
+%%% given a class name, parents, fields and methods (parts), launches
+%%% the procedures to define a new class
 def_class(Class_name, Parents) :-
     def_class(Class_name, Parents, []).
-% def_class\3
 def_class(Class_name, Parents, Parts) :-
     atom(Class_name),
 
@@ -95,16 +103,17 @@ def_class(Class_name, Parents, Parts) :-
 
     assert_class(Class_name, Parents, Parts).
 
-%%% -------- MAKE ---------------
 
 %%% assert_instance_fields\3
+%%% asserts the given list of fields using the predicate
+%%% "instance_field", using the given instance values or the default
+%%% class values. In case Type is present the custom value is checked
 assert_instance_fields(_Instance_name, [], _Instance_values).
 %%% class_field
 %%% use CUSTOM field value
 assert_instance_fields(Instance_name,
                        [class_field(_, Key, _Val) | Tail],
                        Instance_values) :-
-%    arg(2, Class_field, Key),
     member(Key = Value, Instance_values),
     Instance_field =.. [instance_field, Instance_name, Key, Value],
     assertz(Instance_field),
@@ -117,7 +126,6 @@ assert_instance_fields(Instance_name,
     Instance_field =.. [instance_field, Instance_name, Key, Value],
     assertz(Instance_field),
     assert_instance_fields(Instance_name,  Tail, Instance_values).
-
 %%% class_field with TYPE
 %%% use CUSTOM field value
 assert_instance_fields(Instance_name,
@@ -139,9 +147,11 @@ assert_instance_fields(Instance_name,
     assert_instance_fields(Instance_name,  Tail, Instance_values).
 
 
-%%% assert_instance_parents_fields\3
-assert_instance_parents_fields(_Instance_name, [], _Values).
-assert_instance_parents_fields(Instance_name,
+%%% assert_all_instance_fields\3
+%%% finds all the fields related to the instance's class and use
+%%% "assert_instance_fields" to assert them all
+assert_all_instance_fields(_Instance_name, [], _Values).
+assert_all_instance_fields(Instance_name,
                                [Class_name | Tail],
                                Instance_values) :-
     findall(class_field(_, Key, Val),
@@ -152,10 +162,11 @@ assert_instance_parents_fields(Instance_name,
             Class_fields_type),
     append(Class_fields_notype, Class_fields_type, Class_fields),
     assert_instance_fields(Instance_name, Class_fields, Instance_values),
-    assert_instance_parents_fields(Instance_name, Tail, Instance_values).
+    assert_all_instance_fields(Instance_name, Tail, Instance_values).
 
 %%% get_all_parents_list\2
-%%% recursice function to find all the parents of a class
+%%% recursive function to find all the parents of a class starting
+%%% from the directly related parents
 get_all_parents_list([], []).
 get_all_parents_list([Class | Tail], Result) :-
     get_all_parents_list(Tail, All_parents),
@@ -167,7 +178,7 @@ get_all_parents_list([Class | Tail], Result) :-
     append([Class], X, Result).
 
 %%% get_all_parents()\2
-%%% given a class name returns a list containing  all his parents and himself
+%%% given a class name returns a list containing all of his parents and himself
 get_all_parents(Class_name, All_parents) :-
     atom(Class_name),
     findall(Parent,
@@ -175,20 +186,20 @@ get_all_parents(Class_name, All_parents) :-
             Parents),
         get_all_parents_list(Parents, All_parents).
 
-%
-%extract_arguments(Term, Arguments) :-
-%    Term =.. [_|Arguments].
-
+%%% substitute_this_chars\3
+%%% give a list of characters resturns a list with the occurrences of
+%%% [t, h, i, s] substituted by "Sub" (which contains the instance name
+%%% divided in characters)
 substitute_this_chars([], _Sub, []).
-
 substitute_this_chars([t, h, i, s | Tail], Sub, [Sub | Res]) :-
     substitute_this_chars(Tail, Sub, Res),
     !.
-
 substitute_this_chars([Head | Tail], Sub, [Head | Res]) :-
     substitute_this_chars(Tail, Sub, Res).
 
-
+%%% substitute_this\3
+%%% substitutes the occcurences of "this" in the given method with the
+%%% value of "Substitute" which is the name of the instance
 substitute_this(Term_old, Substitute, Result) :-
     term_string(Term_old, String_old),
     string_chars(String_old, Chars_old),
@@ -198,7 +209,9 @@ substitute_this(Term_old, Substitute, Result) :-
     string_chars(Flat_string_new, Flat_chars_new),
     term_string(Result, Flat_string_new).
 
-
+%%% assert_instance_method\2
+%%% given a list of methods use "substitute_this" to personalize the
+%%% method for the given instance than assert each method 
 assert_instance_method(_Instance_name, []).
 assert_instance_method(Instance_name,
                        [class_method(_Class_name,
@@ -211,55 +224,87 @@ assert_instance_method(Instance_name,
     assertz(Method :- New_form),
     assert_instance_method(Instance_name, Tail).
 
+%%% assert_instance_parents_methods\2
+%%% given an instance name and list of classes, finds all the methods
+%%% related to the first class and asserts them, than finds all the
+%%% parents and make a recursive call with them, in the end make a
+%%% recursive call with the Tail of the list
+assert_instance_parents_methods(_Instance_name, []).
+assert_instance_parents_methods(Instance_name, [Class_name | Tail]) :-
+     findall(class_method(Class_name, Method_name, Arguments, Form),
+            class_method(Class_name, Method_name, Arguments, Form),
+            Methods),
+     findall(Parent,
+	     superclass(Class_name, Parent),
+	     Parents),
+     assert_instance_method(Instance_name, Methods),
+     assert_instance_parents_methods(Instance_name, Parents),
+     assert_instance_parents_methods(Instance_name, Tail).
+
+%%% assert_instance_methods\2
+%%% given an instance name and a class name finds all the methods of
+%%% class name and call method to assert them in order to be used with
+%%% the instance, than call a method to recursively assert all the
+%%% parents methods
 assert_instance_methods(Instance_name, Class_name) :-
     findall(class_method(Class_name, Method_name, Arguments, Form),
             class_method(Class_name, Method_name, Arguments, Form),
             Methods),
-    % TODO: inherit all parents methods, if duplicate use the nearest method
-    assert_instance_method(Instance_name, Methods).
+    findall(Parent,
+	    superclass(Class_name, Parent),
+	    Parents),
+    %%%%%%%%%%%%%%%%%%%%%%% TODO: inherit all parents methods, if duplicate use the nearest method
+    assert_instance_method(Instance_name, Methods),
+    assert_instance_parents_methods(Instance_name, Parents).
 
-%%% assert_instance()
+%%% assert_instance()\3
+%%% if Instance_name doesn't represent an instance yet, asserts the
+%%% instance using the predicate "instance_()" linking the instance
+%%% name to the class name. then launches the procedures to assert all
+%%% the remaining parts 
 assert_instance(Instance_name, Class_name, Instance_values) :-
     \+ is_instance(Instance_name),
     assertz(instance_(Instance_name, Class_name)),
     get_all_parents(Class_name, Parent_classes),
     append([Class_name], Parent_classes, Related_classes),
-    assert_instance_parents_fields(Instance_name,
+    assert_all_instance_fields(Instance_name,
                                    Related_classes,
                                    Instance_values),
     assert_instance_methods(Instance_name, Class_name).
 
-% make(+Instance_name, +Class_name, +Fields)
-%%% Instance_name is an atom()
+%%% make(+Instance_name, +Class_name, +Fields)
+%%% if "Instance_name" is an atom creates a new instance named
+%%% "Instance_name". if "Instance_name" is a variable unifies with the
+%%% predicate representing the instance 
 make(Instance_name, Class_name) :-
     make(Instance_name, Class_name, []).
-
 make(Instance_name, Class_name, Fields) :-
     atom(Instance_name),
     is_class(Class_name),
     is_list(Fields),
     assert_instance(Instance_name, Class_name, Fields).
-
 make(Instance_name, Class_name, Fields) :-
     var(Instance_name),
     is_class(Class_name),
     is_list(Fields),
     Instance_name =.. [instance_, any, Class_name].
 
-%%% TODO: make v2
-%%% TODO: make v3
-%%% TODO: make check if field names are right for the instance
-
 %%% is_instance()
+%%% given an instance name, returns true if the instance exist
+%%% given an instance name and a class, returns true if the instance
+%%% is an instance of the class or the class is a superclass of the
+%%% instance's class
 is_instance(Instance_name) :-
     instance_(Instance_name, _Class_name).
 is_instance(Instance_name, Superclass_name) :-
     instance_(Instance_name, Class_name),
     get_all_parents(Class_name, Parents),
-    member(Superclass_name, Parents).
+    append([Class_name], Parents, Classes),
+    member(Superclass_name, Classes).
 
 %%% inst\2
-%%% build instance(inst_name, class, [key = value, ...])
+%%% given an instance name returns "Instance" which is a predicate
+%%% representing the instance (inst_name, class, [key = value, ...])
 inst(Instance_name, Instance) :-
     instance_(Instance_name, Class_name),
     findall(Key = Value,
@@ -272,28 +317,21 @@ inst(Instance_name, Instance) :-
     Instance =.. [instance_, Instance_name, Class_name, Fields].
 
 %%% field()\3
+%%% given an instance name and a field name, returns the value
+%%% associated to field in the specified instance
 field(Instance_name, Field_name, Result) :-
     instance_field(Instance_name, Field_name, Result).
 field(Instance_name, Field_name, Result) :-
     instance_field(Instance_name, Field_name, Result, _).
 
 %%% fieldx()\3
+%%% given an instance name and a list of field names, extracts the value
+%%% from the instance by going through the chain fields given in the
+%%% list and returns the last value
 fieldx(Result, [], Result).
 fieldx(Instance_name, [Field_name | Tail], Result) :-
     is_instance(Instance_name),
     field(Instance_name, Field_name, Value),
     fieldx(Value, Tail, Result).
-%Example
-/*
-def_class(person, [], [ field(name, "Eve"), field(age, 21, integer)]).
-def_class(student, [person], [ field(name, "Eva Lu Ator"), field(university, "Berkeley"), method(talk, [], (write("My name is "), field(this, name, N), writeln(N), write("My age is "), field(this, age, A), writeln(A)))]).
-def_class(studente_bicocca, [student], [method(talk, [], (write("Mi chiamo"), field(this, name, N), writeln(N), writeln("e studio alla Bicocca."))), method(to_string, [ResultingString], (with_output_to(string(ResultingString),(field(this, name, N), field(this, university, U), format("#<~w Student ~w>", [U, N]))))), field(university, "UNIMIB")]).
 
-assert_class_parts(person, [method(cut6, [This, X], (writeln("CUT!"), field(This, name, X), writeln(X) )) ]).
-
-def_class(planet, [], [field(name, terra)]).
-def_class(continent, [planet], [field(name2, europa)]).
-def_class(state, [continent], [field(name3, italia)]).
-make(s1, state, [name1 = "Marte", name2 = "Avis", name3="site"]).
-*/
 %%% end of file - ool.pl
