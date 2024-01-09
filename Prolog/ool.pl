@@ -4,7 +4,7 @@
 
 :- dynamic class/3.
 :- dynamic class_field/3.
-:- dynamic class_field/4
+:- dynamic class_field/4.
 :- dynamic class_method/4.
 :- dynamic instance_/2.
 :- dynamic superclass/2.
@@ -239,6 +239,12 @@ make(Instance_name, Class_name, Fields) :-
     is_class(Class_name),
     is_list(Fields),
     assert_instance(Instance_name, Class_name, Fields).
+
+make(Instance_name, Class_name, Fields) :-
+    var(Instance_name),
+    is_class(Class_name),
+    is_list(Fields),
+    Instance_name =.. [instance_, any, Class_name].
 
 %%% TODO: make v2
 %%% TODO: make v3
