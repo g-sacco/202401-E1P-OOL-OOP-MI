@@ -1,5 +1,7 @@
 ;;;; Sacco Giacomo 899927
 
+;;;
+
 ;;; OOA in Common Lisp
 
 ;;; Classes' HASH Table

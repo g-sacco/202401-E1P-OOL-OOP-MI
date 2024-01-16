@@ -18,8 +18,9 @@ is_class(Class_name) :-
     atom(Class_name),
     class(Class_name, _, _).
 
-%%% is_list_of_Classes\1
-%%% checks if every element of a list is atomic
+%%% is_list_of_Classes\2
+%%% checks if every element of a list is atomic and is different from
+%%% the passed class 
 is_list_of_classes([], _).
 is_list_of_classes([X | Xs], Curr_class) :-
     X \= Curr_class,
@@ -32,6 +33,11 @@ is_list_of_classes([X | Xs], Curr_class) :-
 is_list_of_parts([]).
 is_list_of_parts([field(Field_name, _Value) | Parts]) :-
     atom(Field_name),
+    is_list_of_parts(Parts).
+is_list_of_parts([field(Field_name, Value, Type) | Parts]) :-
+    atom(Field_name),
+    is_class(Type),
+    instance_(Value, Type),
     is_list_of_parts(Parts).
 is_list_of_parts([field(Field_name, Value, Type) | Parts]) :-
     atom(Field_name),
@@ -50,6 +56,7 @@ is_list_of_parts([method(Method_name, Arglist, Form) | Parts]) :-
 assert_class_parents(_Class_name, []).
 assert_class_parents(Class_name, [Parent | Tail]) :-
     Superclass =.. [superclass, Class_name, Parent],
+    is_class(Parent),
     assertz(Superclass), % superclass(CN, PN)
     assert_class_parents(Class_name, Tail).
 
@@ -57,16 +64,20 @@ assert_class_parents(Class_name, [Parent | Tail]) :-
 %%% assert_class_parts()\2
 %%% asserts fields as "class_field()" and methods as "class_method()"
 assert_class_parts(_Class_name, []).
-assert_class_parts(Class_name, [field(Field_name, Value) | Tail]) :-
+assert_class_parts(Class_name,
+		   [field(Field_name, Value) | Tail]) :-
     Field =.. [class_field, Class_name,  Field_name, Value],
     assertz(Field),
     assert_class_parts(Class_name, Tail).
-assert_class_parts(Class_name, [field(Field_name, Value, Type) | Tail]) :-
+assert_class_parts(Class_name,
+		   [field(Field_name, Value, Type) | Tail]) :-
     Field =.. [class_field, Class_name, Field_name, Value, Type],
     assertz(Field),
     assert_class_parts(Class_name, Tail).
-assert_class_parts(Class_name, [method(Method_name, Arguments, Form) | Tail]) :-
-    Class_method =.. [class_method, Class_name, Method_name, Arguments, Form],
+assert_class_parts(Class_name,
+		   [method(Method_name, Arguments, Form) | Tail]) :-
+    Class_method =.. [class_method, Class_name, Method_name, Arguments
+		      , Form], 
     assertz(Class_method),
     assert_class_parts(Class_name, Tail).
 
@@ -89,33 +100,48 @@ assert_class(Class_name, _Parents, _Parts) :-
 
 %%% def_class\3
 %%% given a class name, parents, fields and methods (parts), launches
-%%% the procedures to define a new class
+%%% the procedures to assert a new class
 def_class(Class_name, Parents) :-
     def_class(Class_name, Parents, []).
 def_class(Class_name, Parents, Parts) :-
     atom(Class_name),
-
     is_list(Parents),
     is_list_of_classes(Parents, Class_name),
-
     is_list(Parts),
     is_list_of_parts(Parts),
-
     assert_class(Class_name, Parents, Parts).
 
+
+list_empty([], true).
+list_empty([_|_], false).
+
+%%% instance_field_doesnt_exist\1
+%%% return false if field_name has already been asserted
+instance_field_doesnt_exist(Instance_name, Field_name) :-
+    findall(Field_name,
+            instance_field(Instance_name, Field_name, _Value),
+            Fields_notype),
+    findall(Field_name,
+            instance_field(Instance_name, Field_name, _Val, _Type),
+            Fields_type),
+    append(Fields_notype, Fields_type, Fields),
+    writeln(Fields),
+    list_empty(Fields, Empty),
+    Empty.
 
 %%% assert_instance_fields\3
 %%% asserts the given list of fields using the predicate
 %%% "instance_field", using the given instance values or the default
 %%% class values. In case Type is present the custom value is checked
 assert_instance_fields(_Instance_name, [], _Instance_values).
-%%% class_field
+%%% class_field without TYPE
 %%% use CUSTOM field value
 assert_instance_fields(Instance_name,
                        [class_field(_, Key, _Val) | Tail],
                        Instance_values) :-
     member(Key = Value, Instance_values),
     Instance_field =.. [instance_field, Instance_name, Key, Value],
+    instance_field_doesnt_exist(Instance_name, Key),
     assertz(Instance_field),
     assert_instance_fields(Instance_name,  Tail, Instance_values).
 %%% use DEFAULT field_value
@@ -124,6 +150,7 @@ assert_instance_fields(Instance_name,
                        Instance_values) :-
     \+ member(Key = _Val, Instance_values),
     Instance_field =.. [instance_field, Instance_name, Key, Value],
+    instance_field_doesnt_exist(Instance_name, Key),
     assertz(Instance_field),
     assert_instance_fields(Instance_name,  Tail, Instance_values).
 %%% class_field with TYPE
@@ -133,8 +160,19 @@ assert_instance_fields(Instance_name,
                        Instance_values) :-
     member(Key = Value, Instance_values),
     Instance_field =.. [instance_field, Instance_name, Key, Value, Type],
+    is_class(Type),
+    instance_(Value, Type),
+    instance_field_doesnt_exist(Instance_name, Key),
+    assertz(Instance_field),
+    assert_instance_fields(Instance_name,  Tail, Instance_values).
+assert_instance_fields(Instance_name,
+                       [class_field(_, Key, _Val, Type) | Tail],
+                       Instance_values) :-
+    member(Key = Value, Instance_values),
+    Instance_field =.. [instance_field, Instance_name, Key, Value, Type],
     Type_test =.. [Type, Value],
     Type_test,
+    instance_field_doesnt_exist(Instance_name, Key),
     assertz(Instance_field),
     assert_instance_fields(Instance_name,  Tail, Instance_values).
 %%% use DEFAULT field_value
@@ -143,9 +181,21 @@ assert_instance_fields(Instance_name,
                        Instance_values) :-
     \+ member(Key = _Val, Instance_values),
     Instance_field =.. [instance_field, Instance_name, Key, Value],
+    instance_field_doesnt_exist(Instance_name, Key),
     assertz(Instance_field),
     assert_instance_fields(Instance_name,  Tail, Instance_values).
 
+%%% in case the field has already been asserted skipp the assert 
+assert_instance_fields(Instance_name,
+                       [class_field(_, Key, _Value, _Type) | Tail],
+                       Instance_values) :-
+    \+ instance_field_doesnt_exist(Instance_name, Key),
+    assert_instance_fields(Instance_name,  Tail, Instance_values).
+assert_instance_fields(Instance_name,
+                       [class_field(_, Key, _Value) | Tail],
+                       Instance_values) :-
+    \+ instance_field_doesnt_exist(Instance_name, Key),
+    assert_instance_fields(Instance_name,  Tail, Instance_values).
 
 %%% assert_all_instance_fields\3
 %%% finds all the fields related to the instance's class and use
@@ -178,7 +228,8 @@ get_all_parents_list([Class | Tail], Result) :-
     append([Class], X, Result).
 
 %%% get_all_parents()\2
-%%% given a class name returns a list containing all of his parents and himself
+%%% given a class name returns a list containing all of his parents
+%%% and himself
 get_all_parents(Class_name, All_parents) :-
     atom(Class_name),
     findall(Parent,
@@ -210,8 +261,8 @@ substitute_this(Term_old, Substitute, Result) :-
     term_string(Result, Flat_string_new).
 
 %%% assert_instance_method\2
-%%% given a list of methods use "substitute_this" to personalize the
-%%% method for the given instance than assert each method 
+%%% given a list of methods use "substitute_this" to personalize each
+%%% method for the given instance, than assert the method 
 assert_instance_method(_Instance_name, []).
 assert_instance_method(Instance_name,
                        [class_method(_Class_name,
@@ -219,9 +270,9 @@ assert_instance_method(Instance_name,
                                      Args,
                                      Form) | Tail]) :-
     append([[Method_name], [Instance_name], Args], Predicate),
-    Method =.. Predicate,
-    substitute_this(Form, Instance_name, New_form),
-    assertz(Method :- New_form),
+    Method_prefix =.. Predicate,
+    substitute_this(Method_prefix :- Form, Instance_name, Method),
+    assertz(Method),
     assert_instance_method(Instance_name, Tail).
 
 %%% assert_instance_parents_methods\2
@@ -253,11 +304,10 @@ assert_instance_methods(Instance_name, Class_name) :-
     findall(Parent,
 	    superclass(Class_name, Parent),
 	    Parents),
-    %%%%%%%%%%%%%%%%%%%%%%% TODO: inherit all parents methods, if duplicate use the nearest method
     assert_instance_method(Instance_name, Methods),
     assert_instance_parents_methods(Instance_name, Parents).
 
-%%% assert_instance()\3
+%%% assert_instance\3
 %%% if Instance_name doesn't represent an instance yet, asserts the
 %%% instance using the predicate "instance_()" linking the instance
 %%% name to the class name. then launches the procedures to assert all
@@ -272,7 +322,7 @@ assert_instance(Instance_name, Class_name, Instance_values) :-
                                    Instance_values),
     assert_instance_methods(Instance_name, Class_name).
 
-%%% make(+Instance_name, +Class_name, +Fields)
+%%% make\3
 %%% if "Instance_name" is an atom creates a new instance named
 %%% "Instance_name". if "Instance_name" is a variable unifies with the
 %%% predicate representing the instance 
@@ -316,7 +366,7 @@ inst(Instance_name, Instance) :-
     append(Fields_notype, Fields_type, Fields),
     Instance =.. [instance_, Instance_name, Class_name, Fields].
 
-%%% field()\3
+%%% field\3
 %%% given an instance name and a field name, returns the value
 %%% associated to field in the specified instance
 field(Instance_name, Field_name, Result) :-
@@ -324,7 +374,7 @@ field(Instance_name, Field_name, Result) :-
 field(Instance_name, Field_name, Result) :-
     instance_field(Instance_name, Field_name, Result, _).
 
-%%% fieldx()\3
+%%% fieldx\3
 %%% given an instance name and a list of field names, extracts the value
 %%% from the instance by going through the chain fields given in the
 %%% list and returns the last value
